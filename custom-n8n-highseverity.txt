@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+# Wazuh Integration Script for n8n - High Severity Alerts (Level >=10)
+# File Location: /var/ossec/integrations/custom-n8n-highseverity
+# Purpose: Automatically send high-severity alerts to n8n for premium email notifications
+
+import json
+import sys
+import os
+import requests
+from datetime import datetime
+
+# Configuration
+WEBHOOK_URL ="https://analimor.app.n8n.cloud/webhook-test/wazuh-high-severity-alerts"  # Update to your n8n instance
+LOG_FILE = "/var/ossec/logs/custom-n8n-highseverity.log"
+
+# Exit codes
+ERR_NO_REQUEST_MODULE = 1
+ERR_BAD_ARGUMENTS = 2
+ERR_FILE_NOT_FOUND = 6
+ERR_INVALID_JSON = 7
+
+def log_message(message):
+    """Write to log file with timestamp"""
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = f"[{timestamp}] {message}\n"
+        with open(LOG_FILE, 'a') as f:
+            f.write(log_entry)
+        # Also print to stdout for debugging
+        print(log_entry.strip())
+    except Exception as e:
+        sys.stderr.write(f"Logging error: {str(e)}\n")
+
+def send_to_n8n(alert_data):
+    """Send alert to n8n webhook"""
+    try:
+        log_message(f"Attempting to send high-severity alert to n8n: {WEBHOOK_URL}")
+        
+        # Prepare the payload - wrap in 'body' key as n8n expects
+        payload = {
+            "body": alert_data
+        }
+        
+        log_message(f"Rule ID: {alert_data.get('rule', {}).get('id', 'N/A')}")
+        log_message(f"Severity: {alert_data.get('rule', {}).get('level', 'N/A')}")
+        log_message(f"Agent: {alert_data.get('agent', {}).get('name', 'N/A')}")
+        log_message(f"Payload: {json.dumps(payload)[:200]}...")
+        
+        response = requests.post(
+            WEBHOOK_URL,
+            json=payload,
+            headers={'Content-Type': 'application/json'},
+            timeout=15,
+            verify=True
+        )
+        
+        log_message(f"Response Status: {response.status_code}")
+        log_message(f"Response Body: {response.text[:500]}")
+        
+        if response.status_code == 200:
+            log_message("✓ High-severity alert sent successfully to n8n")
+            return True
+        else:
+            log_message(f"✗ Warning: Non-200 status code")
+            return False
+            
+    except requests.exceptions.Timeout:
+        log_message("✗ ERROR: Request timeout - n8n webhook not responding")
+        return False
+    except requests.exceptions.ConnectionError as ce:
+        log_message(f"✗ ERROR: Connection failed: {str(ce)}")
+        return False
+    except Exception as e:
+        log_message(f"✗ ERROR: Unexpected error: {str(e)}")
+        import traceback
+        log_message(f"Traceback: {traceback.format_exc()}")
+        return False
+
+def main(args):
+    """Main function - called by Wazuh with alert file path"""
+    try:
+        log_message("=" * 60)
+        log_message("High-Severity Script started")
+        log_message(f"Arguments received: {args}")
+        log_message(f"Number of arguments: {len(args)}")
+        
+        # Wazuh passes: script_name, alert_file, user, alert_id, rule_id, agent_name, agent_ip
+        if len(args) < 2:
+            log_message(f"✗ ERROR: Insufficient arguments. Got {len(args)}, need at least 2")
+            log_message(f"Usage: {args[0]} <alert_file_path>")
+            sys.exit(ERR_BAD_ARGUMENTS)
+        
+        # Get alert file path (second argument)
+        alert_file_path = args[1]
+        log_message(f"Alert file path: {alert_file_path}")
+        
+        # Check if alert file exists
+        if not os.path.exists(alert_file_path):
+            log_message(f"✗ ERROR: Alert file does not exist: {alert_file_path}")
+            sys.exit(ERR_FILE_NOT_FOUND)
+        
+        # Check if file is readable
+        if not os.access(alert_file_path, os.R_OK):
+            log_message(f"✗ ERROR: Alert file is not readable: {alert_file_path}")
+            sys.exit(ERR_FILE_NOT_FOUND)
+        
+        log_message(f"✓ Alert file exists and is readable")
+        
+        # Read and parse alert file
+        try:
+            with open(alert_file_path, 'r') as f:
+                file_content = f.read()
+                log_message(f"File content (first 500 chars): {file_content[:500]}")
+                alert_json = json.loads(file_content)
+            log_message(f"✓ Alert file parsed successfully")
+        except json.JSONDecodeError as je:
+            log_message(f"✗ ERROR: Invalid JSON in alert file: {str(je)}")
+            log_message(f"✗ ERROR: File content: {file_content[:500]}")
+            sys.exit(ERR_INVALID_JSON)
+        except Exception as e:
+            log_message(f"✗ ERROR: Failed to read alert file: {str(e)}")
+            sys.exit(ERR_FILE_NOT_FOUND)
+        
+        # Log alert details
+        rule_id = alert_json.get('rule', {}).get('id', 'Unknown')
+        rule_desc = alert_json.get('rule', {}).get('description', 'Unknown')
+        rule_level = alert_json.get('rule', {}).get('level', 'Unknown')
+        agent_name = alert_json.get('agent', {}).get('name', 'Unknown')
+        agent_ip = alert_json.get('agent', {}).get('ip', 'Unknown')
+        
+        log_message(f"Rule ID: {rule_id}")
+        log_message(f"Severity Level: {rule_level}")
+        log_message(f"Description: {rule_desc}")
+        log_message(f"Agent: {agent_name}")
+        log_message(f"Agent IP: {agent_ip}")
+        
+        # Quick check: Ensure level >=10 (double-safety)
+        if int(rule_level) < 10:
+            log_message(f"✗ Skipping low-severity alert (Level {rule_level} < 10)")
+            sys.exit(0)
+        
+        # Send to n8n
+        log_message("Attempting to send high-severity alert to n8n...")
+        success = send_to_n8n(alert_json)
+        
+        if success:
+            log_message("✓ High-severity integration completed successfully")
+            sys.exit(0)
+        else:
+            log_message("✗ High-severity integration failed")
+            sys.exit(1)
+        
+    except Exception as e:
+        log_message(f"✗ FATAL ERROR: {str(e)}")
+        import traceback
+        log_message(f"Traceback: {traceback.format_exc()}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main(sys.argv)

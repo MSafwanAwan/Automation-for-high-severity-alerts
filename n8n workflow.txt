@@ -1,0 +1,120 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wazuh-high-severity-alerts",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "webhook-high-severity",
+      "name": "Webhook - Receive High Severity Alert",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [ -256, -32 ],
+      "webhookId": "wazuh-high-severity-alerts"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "severity-check",
+              "leftValue": "={{ Number($json.body.body.rule.level) }}",
+              "rightValue": 10,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-high-severity",
+      "name": "IF - Severity >=10",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [ 32, -32 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the input data\nconst inputData = $input.first().json;\n\n// Handle nested webhook structure\nconst data = inputData.body?.body || inputData.body || inputData;\n\n// Extract values with safe fallbacks\nconst agentName = data.agent?.name || 'Unknown Agent';\nconst agentId = data.agent?.id || 'N/A';\nconst agentIp = data.agent?.ip || 'N/A';\nconst location = data.location || 'N/A';\nconst ruleId = data.rule?.id || 'N/A';\nconst ruleDescription = data.rule?.description || 'N/A';\nconst ruleLevel = data.rule?.level || 'N/A';\nconst fullLog = data.full_log || data.decoder?.output || 'N/A';\nconst timestamp = data.timestamp || data['@timestamp'] || new Date().toISOString();\nconst managerName = data.manager?.name || 'N/A';\n\n// Determine severity badge and color (premium dynamic styling)\nlet severityBadge = '';\nlet severityColor = '';\nlet severityIcon = '';\nlet urgencyText = '';\nconst level = Number(ruleLevel);\nif (level >= 13) {\n  severityBadge = 'CRITICAL';\n  severityColor = '#dc3545'; // Red\n  severityIcon = '🚨';\n  urgencyText = 'IMMEDIATE ACTION REQUIRED: Critical security incident detected.';\n} else if (level >= 10) {\n  severityBadge = 'HIGH';\n  severityColor = '#fd7e14'; // Orange\n  severityIcon = '⚠️';\n  urgencyText = 'URGENT: High-severity event - investigate promptly.';\n}\n\n// Create email subject\nconst emailSubject = `${severityIcon} ${severityBadge} Wazuh Alert: ${ruleDescription.substring(0, 50)}... (${agentName})`;\n\n// Premium HTML email body with enhanced styling\nconst emailBody = `<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }\n    .container { max-width: 700px; margin: 20px auto; background: white; box-shadow: 0 10px 30px rgba(0,0,0,0.2); border-radius: 12px; overflow: hidden; }\n    .header { background: linear-gradient(135deg, ${severityColor} 0%, #${level >=13 ? 'c82333' : 'e74c3c'} 100%); color: white; padding: 40px; text-align: center; position: relative; }\n    .alert-icon { font-size: 72px; margin-bottom: 15px; animation: pulse 1.5s infinite; }\n    @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.05); opacity: 0.8; } }\n    .header h1 { margin: 10px 0; font-size: 28px; }\n    .status-badge { display: inline-block; padding: 8px 16px; border-radius: 20px; background: rgba(255,255,255,0.2); color: white; font-size: 14px; font-weight: bold; backdrop-filter: blur(10px); }\n    .content { padding: 40px; }\n    .urgent-banner { background: linear-gradient(90deg, #fff3cd, #ffeaa7); border-left: 6px solid #ffc107; padding: 20px; margin: 25px 0; border-radius: 8px; box-shadow: 0 2px 10px rgba(255,193,7,0.3); }\n    .info-box { background: #f8f9fa; padding: 25px; margin: 25px 0; border-radius: 10px; border: 1px solid #dee2e6; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05); }\n    .info-row { display: flex; padding: 12px 0; border-bottom: 1px solid #e9ecef; font-size: 15px; }\n    .info-row:last-child { border-bottom: none; }\n    .label { font-weight: 600; color: #495057; min-width: 180px; }\n    .value { color: #212529; flex: 1; word-break: break-word; }\n    .log-section { background: #e9ecef; padding: 15px; border-radius: 6px; font-family: 'Courier New', monospace; font-size: 13px; overflow-x: auto; margin: 15px 0; }\n    .action-box { background: linear-gradient(135deg, #e3f2fd, #bbdefb); padding: 25px; margin: 25px 0; border-radius: 10px; border-left: 5px solid #2196f3; box-shadow: 0 2px 10px rgba(33,150,243,0.2); }\n    .action-box h3 { margin-top: 0; color: #1976d2; }\n    .action-box ul { margin: 15px 0; padding-left: 25px; }\n    .action-box li { margin: 10px 0; font-size: 14px; }\n    .footer { text-align: center; padding: 25px; background: #f8f9fa; color: #6c757d; font-size: 14px; border-top: 1px solid #dee2e6; }\n    .timestamp { font-size: 12px; opacity: 0.8; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div class=\"alert-icon\">${severityIcon}</div>\n      <h1>Wazuh High Severity Alert</h1>\n      <p style=\"margin: 10px 0; opacity: 0.9;\">Advanced Security Monitoring</p>\n      <span class=\"status-badge\">${severityBadge} - Level ${ruleLevel}</span>\n    </div>\n    \n    <div class=\"content\">\n      <div class=\"urgent-banner\">\n        <strong>${severityIcon} ${urgencyText}</strong>\n      </div>\n      \n      <div class=\"info-box\">\n        <h3 style=\"margin-top: 0; color: ${severityColor}; border-bottom: 3px solid ${severityColor}; padding-bottom: 12px;\">🛡️ Alert Overview</h3>\n        <div class=\"info-row\"><span class=\"label\">Rule ID:</span><span class=\"value\"><strong>${ruleId}</strong></span></div>\n        <div class=\"info-row\"><span class=\"label\">Description:</span><span class=\"value\">${ruleDescription}</span></div>\n        <div class=\"info-row\"><span class=\"label\">Severity Level:</span><span class=\"value\"><strong style=\"color: ${severityColor}\">${ruleLevel}</strong></span></div>\n        <div class=\"info-row\"><span class=\"label\">Timestamp:</span><span class=\"value\">${timestamp}</span></div>\n      </div>\n      \n      <div class=\"info-box\">\n        <h3 style=\"margin-top: 0; color: #495057; border-bottom: 2px solid #6c757d; padding-bottom: 10px;\">🏠 Affected Asset</h3>\n        <div class=\"info-row\"><span class=\"label\">Agent Name:</span><span class=\"value\"><strong>${agentName}</strong></span></div>\n        <div class=\"info-row\"><span class=\"label\">Agent ID:</span><span class=\"value\">${agentId}</span></div>\n        <div class=\"info-row\"><span class=\"label\">IP Address:</span><span class=\"value\">${agentIp}</span></div>\n        <div class=\"info-row\"><span class=\"label\">Location:</span><span class=\"value\">${location}</span></div>\n        <div class=\"info-row\"><span class=\"label\">Manager:</span><span class=\"value\">${managerName}</span></div>\n      </div>\n      \n      <div class=\"info-box\">\n        <h3 style=\"margin-top: 0; color: #28a745; border-bottom: 2px solid #28a745; padding-bottom: 10px;\">📄 Full Log Details</h3>\n        <div class=\"log-section\">\n          <pre>${fullLog}</pre>\n        </div>\n      </div>\n      \n      <div class=\"action-box\">\n        <h3>🔍 Recommended Response Actions</h3>\n        <ul>\n          <li><strong>Isolate Asset:</strong> Quarantine the affected host if compromise suspected<br/><code>ssh ${agentName} 'iptables -A INPUT -j DROP'</code> (Linux example)</li>\n          <li><strong>Review Logs:</strong> Deep-dive into agent logs for patterns<br/><code>tail -n 100 /var/ossec/logs/ossec.log | grep '${ruleId}'</code></li>\n          <li><strong>Scan for Malware:</strong> Run full system scan<br/><code>wazuh-logtest</code> or integrate with ClamAV</li>\n          <li><strong>Notify Team:</strong> Escalate via Slack/Teams if needed</li>\n          <li><strong>Remediate:</strong> Apply patches or config changes based on rule</li>\n        </ul>\n      </div>\n      \n      <div style=\"background: linear-gradient(90deg, #f8d7da, #f5c6cb); border: 1px solid #f5c6cb; padding: 20px; border-radius: 8px; margin: 25px 0; text-align: center;\">\n        <strong>⏰ Priority Alert:</strong> Address within 15 minutes to mitigate risks.\n      </div>\n    </div>\n    \n    <div class=\"footer\">\n      <p style=\"margin: 10px 0;\">🤖 Automated Premium Alert from Wazuh + n8n</p>\n      <p style=\"margin: 10px 0;\">For SOC Team Review | Generated: <span class=\"timestamp\">${new Date().toLocaleString()}</span></p>\n    </div>\n  </div>\n</body>\n</html>`;\n\n// Return formatted data\nreturn {\n  json: {\n    emailSubject,\n    emailBody,\n    rawAlert: data,\n    severityLevel: ruleLevel\n  }\n};\n"
+      },
+      "id": "format-premium-alert",
+      "name": "Premium Email Formatter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 352, -48 ]
+    },
+    {
+      "parameters": {
+        "sendTo": "saifsocx@gmail.com",
+        "subject": "={{ $json.emailSubject }}",
+        "message": "={{ $json.emailBody }}",
+        "options": {
+          "html": true
+        }
+      },
+      "id": "send-premium-email",
+      "name": "Send Premium Alert Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [ 640, -48 ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "jpHLOqIKdOUOyn1k",
+          "name": "Gmail account 2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook - Receive High Severity Alert": {
+      "main": [
+        [
+          {
+            "node": "IF - Severity >=10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Severity >=10": {
+      "main": [
+        [
+          {
+            "node": "Premium Email Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Premium Email Formatter": {
+      "main": [
+        [
+          {
+            "node": "Send Premium Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e6ba6753185587c11a71d9c238b53351650ae3f7694930fdb4a1dc3400c083f0"
+  }
+}
