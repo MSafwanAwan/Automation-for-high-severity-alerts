@@ -5,6 +5,7 @@ This project implements automated SOC alerting by integrating **Wazuh SIEM with 
 
 The system detects critical alerts in Wazuh and automatically triggers an n8n workflow that processes the alert data and sends structured email notifications to analysts for rapid response.
 
+For Commands and execution step visit: ([COMMANDS.md](https://github.com/MSafwanAwan/Automation-for-high-severity-alerts/blob/main/COMMANDS.md))
 
 ## 🎯 Objectives
 - Automate alert notification for critical threats
